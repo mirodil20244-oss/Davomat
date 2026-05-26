@@ -1,6 +1,6 @@
 import telebot
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import math
 
@@ -62,6 +62,12 @@ def distance(lat1, lon1, lat2, lon2):
     return R * c
 
 # =========================
+# TIME
+# =========================
+def get_time():
+    return datetime.now() + timedelta(hours=5)
+
+# =========================
 # START
 # =========================
 @bot.message_handler(commands=['start'])
@@ -95,6 +101,10 @@ def start(message):
 @bot.message_handler(content_types=['location'])
 def location(message):
 
+    now = get_time()
+
+    today = now.strftime("%Y-%m-%d")
+
     user_lat = message.location.latitude
     user_lon = message.location.longitude
 
@@ -114,7 +124,21 @@ def location(message):
 
         return
 
-    now = datetime.now()
+    df = pd.read_excel(FILE_NAME, dtype=str)
+
+    check = df[
+        (df['Ism'] == message.from_user.first_name)
+        & (df['Sana'] == today)
+    ]
+
+    if len(check) > 0:
+
+        bot.send_message(
+            message.chat.id,
+            "❌ Siz bugun allaqachon kelgansiz"
+        )
+
+        return
 
     holat = "OK"
 
@@ -125,11 +149,9 @@ def location(message):
 
         holat = "Kech qoldi"
 
-    df = pd.read_excel(FILE_NAME, dtype=str)
-
     new_row = {
         "Ism": message.from_user.first_name,
-        "Sana": now.strftime("%Y-%m-%d"),
+        "Sana": today,
         "Keldi": now.strftime("%H:%M:%S"),
         "Ketdi": "",
         "Ish_soati": "",
@@ -154,7 +176,7 @@ def location(message):
 @bot.message_handler(func=lambda m: m.text == "Ketdim")
 def ketdim(message):
 
-    now = datetime.now()
+    now = get_time()
 
     df = pd.read_excel(FILE_NAME, dtype=str)
 
@@ -166,11 +188,19 @@ def ketdim(message):
 
         if (
             df.loc[i, 'Ism'] == ism
-            and (
-                pd.isna(df.loc[i, 'Ketdi'])
-                or df.loc[i, 'Ketdi'] == ""
-            )
         ):
+
+            if (
+                not pd.isna(df.loc[i, 'Ketdi'])
+                and df.loc[i, 'Ketdi'] != ""
+            ):
+
+                bot.send_message(
+                    message.chat.id,
+                    "❌ Siz allaqachon ketgansiz"
+                )
+
+                return
 
             kelgan = datetime.strptime(
                 df.loc[i, 'Keldi'],
@@ -242,7 +272,7 @@ def oylik(message):
     )
 
 # =========================
-# EXCEL YUBORISH
+# EXCEL
 # =========================
 @bot.message_handler(commands=['excel'])
 def excel(message):
