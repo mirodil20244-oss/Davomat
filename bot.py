@@ -1,31 +1,14 @@
 import telebot
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+import pandas as pd
 from datetime import datetime
+import os
 import math
 
 TOKEN = "7780206034:AAHQgPpk2z5jxqU-4KGGA0VcA16lZo94qkU"
 
 bot = telebot.TeleBot(TOKEN)
 
-# =========================
-# GOOGLE SHEETS
-# =========================
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive"
-]
-
-creds = ServiceAccountCredentials.from_json_keyfile_name(
-    "braided-pride-497505-t3-5bac59d67178.json",
-    scope
-)
-
-client = gspread.authorize(creds)
-
-sheet = client.open_by_url(
-    "https://docs.google.com/spreadsheets/d/1BgmUzqVfjVKRcSrv-qgIhIETNznWXlec7z31_Gio3vE/edit?usp=sharing"
-).sheet1
+FILE_NAME = "davomat.xlsx"
 
 # =========================
 # GPS
@@ -34,6 +17,22 @@ OFFICE_LAT = 42.308964
 OFFICE_LON = 69.726254
 
 MAX_DISTANCE = 100
+
+# =========================
+# EXCEL
+# =========================
+if not os.path.exists(FILE_NAME):
+
+    df = pd.DataFrame(columns=[
+        "Ism",
+        "Sana",
+        "Keldi",
+        "Ketdi",
+        "Ish_soati",
+        "Holat"
+    ])
+
+    df.to_excel(FILE_NAME, index=False)
 
 # =========================
 # DISTANCE
@@ -86,7 +85,7 @@ def start(message):
 
     bot.send_message(
         message.chat.id,
-        "Davomat botiga xush kelibsiz ✅",
+        "✅ Davomat botiga xush kelibsiz",
         reply_markup=markup
     )
 
@@ -126,16 +125,23 @@ def location(message):
 
         holat = "Kech qoldi"
 
-    row = [
-        message.from_user.first_name,
-        now.strftime("%Y-%m-%d"),
-        now.strftime("%H:%M:%S"),
-        "",
-        "",
-        holat
-    ]
+    df = pd.read_excel(FILE_NAME, dtype=str)
 
-    sheet.append_row(row)
+    new_row = {
+        "Ism": message.from_user.first_name,
+        "Sana": now.strftime("%Y-%m-%d"),
+        "Keldi": now.strftime("%H:%M:%S"),
+        "Ketdi": "",
+        "Ish_soati": "",
+        "Holat": holat
+    }
+
+    df = pd.concat(
+        [df, pd.DataFrame([new_row])],
+        ignore_index=True
+    )
+
+    df.to_excel(FILE_NAME, index=False)
 
     bot.send_message(
         message.chat.id,
@@ -148,20 +154,26 @@ def location(message):
 @bot.message_handler(func=lambda m: m.text == "Ketdim")
 def ketdim(message):
 
-    data = sheet.get_all_values()
+    now = datetime.now()
+
+    df = pd.read_excel(FILE_NAME, dtype=str)
 
     ism = message.from_user.first_name
 
-    now = datetime.now()
+    topildi = False
 
-    for i in range(len(data), 1, -1):
+    for i in range(len(df)-1, -1, -1):
 
-        row = data[i - 1]
-
-        if row[0] == ism and row[3] == "":
+        if (
+            df.loc[i, 'Ism'] == ism
+            and (
+                pd.isna(df.loc[i, 'Ketdi'])
+                or df.loc[i, 'Ketdi'] == ""
+            )
+        ):
 
             kelgan = datetime.strptime(
-                row[2],
+                df.loc[i, 'Keldi'],
                 "%H:%M:%S"
             )
 
@@ -175,27 +187,28 @@ def ketdim(message):
                 2
             )
 
-            sheet.update_cell(i, 4, now.strftime("%H:%M:%S"))
-            sheet.update_cell(i, 5, str(ish_soati))
-
-            holat = row[5]
+            df.loc[i, 'Ketdi'] = now.strftime("%H:%M:%S")
+            df.loc[i, 'Ish_soati'] = str(ish_soati)
 
             if now.hour < 18:
-                holat += " | Erta ketdi"
+                df.loc[i, 'Holat'] += " | Erta ketdi"
 
-            sheet.update_cell(i, 6, holat)
+            df.to_excel(FILE_NAME, index=False)
 
             bot.send_message(
                 message.chat.id,
                 f"✅ Ketgan vaqt saqlandi\nIsh soati: {ish_soati}"
             )
 
-            return
+            topildi = True
+            break
 
-    bot.send_message(
-        message.chat.id,
-        "❌ Avval Keldim bosing"
-    )
+    if not topildi:
+
+        bot.send_message(
+            message.chat.id,
+            "❌ Avval Keldim bosing"
+        )
 
 # =========================
 # OYLIK
@@ -203,40 +216,43 @@ def ketdim(message):
 @bot.message_handler(commands=['oylik'])
 def oylik(message):
 
-    data = sheet.get_all_values()
+    df = pd.read_excel(FILE_NAME, dtype=str)
 
     result = "📊 Oylik hisob\n\n"
 
-    names = []
+    for ism in df['Ism'].unique():
 
-    for row in data[1:]:
+        ish_kuni = len(
+            df[df['Ism'] == ism]
+        )
 
-        if row[0] not in names:
-            names.append(row[0])
-
-    for ism in names:
-
-        ish_kuni = 0
-
-        for row in data[1:]:
-
-            if row[0] == ism:
-                ish_kuni += 1
-
-        oylik = round(
+        oylik_sum = round(
             (200000 / 30) * ish_kuni
         )
 
         result += (
             f"👤 {ism}\n"
             f"📅 Ish kuni: {ish_kuni}\n"
-            f"💰 Oylik: {oylik} tg\n\n"
+            f"💰 Oylik: {oylik_sum} tg\n\n"
         )
 
     bot.send_message(
         message.chat.id,
         result
     )
+
+# =========================
+# EXCEL YUBORISH
+# =========================
+@bot.message_handler(commands=['excel'])
+def excel(message):
+
+    with open(FILE_NAME, 'rb') as file:
+
+        bot.send_document(
+            message.chat.id,
+            file
+        )
 
 print("Bot ishga tushdi ✅")
 
