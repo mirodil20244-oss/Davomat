@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import os
 import math
 
-TOKEN = "7780206034:AAHQgPpk2z5jxqU-4KGGA0VcA16lZo94qkU"
+TOKEN = "8680974735:AAHE4SipleiBAxslSm_hs791KVZT-8LeVlE"
 
 bot = telebot.TeleBot(TOKEN)
 
